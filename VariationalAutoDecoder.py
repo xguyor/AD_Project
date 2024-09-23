@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class VariationalAutoDecoder(nn.Module):
-    def __init__(self, latent_dim=64, input_dim=784, distribution='none'):
+    def __init__(self, latent_dim=64, input_dim=784, distribution='normal'):
         super(VariationalAutoDecoder, self).__init__()
         self.latent_dim = latent_dim
         self.distribution = distribution  # Set the default distribution

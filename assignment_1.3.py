@@ -139,68 +139,6 @@ def evaluate_model_vad(model, dataloader, optimizer, latents, num_epochs, device
     return total_loss / len(dataloader)
 
 
-
-def train_vad_with_distribution(model, train_dl, optimizer, num_epochs, device, distribution="gaussian"):
-    """Train the variational auto-decoder model with reparameterization trick for different distributions."""
-    model.train()
-    for epoch in range(num_epochs):
-        epoch_loss = 0
-        for i, (idx, x) in enumerate(train_dl):
-            idx = idx.to(device)
-            x = x.to(device).view(x.size(0), -1)  # Flatten the images
-
-            # Forward pass with reparameterization trick based on the distribution
-            if distribution == "gaussian":
-                x_rec, mean, log_var = model(x)
-                z = model.reparameterize_gaussian(mean, log_var)
-            elif distribution == "laplace":
-                x_rec, mean, b = model(x)
-                z = model.reparameterize_laplace(mean, b)
-
-            # Losses
-            reconstruction_loss = F.mse_loss(x_rec, x, reduction='mean')  # Use mean to reduce loss scale
-            if distribution == "gaussian":
-                kl_divergence = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
-            elif distribution == "laplace":
-                kl_divergence = torch.sum(torch.abs(mean) + torch.exp(b) - 1 - b)  # Laplace KL divergence
-            kl_divergence /= x.size(0)  # Average over batch size
-
-            # Total loss
-            loss = reconstruction_loss + 0.001 * kl_divergence
-
-            # Backward pass and optimization
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            epoch_loss += loss.item()
-
-        print(f"VAD [{distribution.capitalize()}] Epoch [{epoch + 1}/{num_epochs}], Loss: {epoch_loss / len(train_dl)}")
-
-
-def evaluate_vad_with_distribution(model, dataloader, optimizer, latents, num_epochs, device, distribution="gaussian"):
-    """Evaluate the VAD with a specific distribution."""
-    model.eval()
-    total_loss = 0
-    for i, (idx, x) in enumerate(dataloader):
-        idx = idx.to(device)
-        x = x.to(device).view(x.size(0), -1)
-
-        with torch.no_grad():
-            if distribution == "gaussian":
-                x_rec, mean, log_var = model(x)
-                reconstruction_loss = F.mse_loss(x_rec, x, reduction='mean')
-                kl_divergence = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp()) / x.size(0)
-            elif distribution == "laplace":
-                x_rec, mean, b = model(x)
-                reconstruction_loss = F.mse_loss(x_rec, x, reduction='mean')
-                kl_divergence = torch.sum(torch.abs(mean) + torch.exp(b) - 1 - b) / x.size(0)
-
-            loss = reconstruction_loss + 0.001 * kl_divergence
-
-        total_loss += loss.item()
-
-    return total_loss / len(dataloader)
 def main():
 
     # Hyperparameters
