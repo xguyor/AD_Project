@@ -3,9 +3,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class VariationalAutoDecoder(nn.Module):
-    def __init__(self, latent_dim=64, input_dim=784):
+    def __init__(self, latent_dim=64, input_dim=784, distribution='none'):
         super(VariationalAutoDecoder, self).__init__()
         self.latent_dim = latent_dim
+        self.distribution = distribution  # Set the default distribution
 
         # Encoder layers
         self.fc1 = nn.Linear(input_dim, 512)
@@ -26,9 +27,18 @@ class VariationalAutoDecoder(nn.Module):
         return mean, log_var
 
     def reparameterize(self, mean, log_var):
-        std = torch.exp(0.5 * log_var)
-        eps = torch.randn_like(std)
-        return mean + eps * std  # Reparameterization trick
+        if self.distribution == 'normal':
+            std = torch.exp(0.5 * log_var)
+            eps = torch.randn_like(std)
+            return mean + eps * std  # Normal distribution reparameterization
+        elif self.distribution == 'uniform':
+            # Uniform distribution: Draw from a range between -sqrt(3)*std and sqrt(3)*std
+            std = torch.exp(0.5 * log_var)
+            eps = (torch.rand_like(std) * 2 - 1) * (std * (3 ** 0.5))
+            return mean + eps
+        else:
+            # If no distribution is selected, return mean as latent space
+            return mean
 
     def decode(self, z):
         h = F.relu(self.fc3(z))
