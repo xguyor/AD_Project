@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class VariationalAutoDecoder(nn.Module):
-    def __init__(self, latent_dim=64, input_dim=784, distribution='normal'):
+    def __init__(self, latent_dim=64, input_dim=784, distribution='gaussian'):
         super(VariationalAutoDecoder, self).__init__()
         self.latent_dim = latent_dim
         self.distribution = distribution  # Set the default distribution
@@ -27,10 +27,10 @@ class VariationalAutoDecoder(nn.Module):
         return mean, log_var
 
     def reparameterize(self, mean, log_var):
-        if self.distribution == 'normal':
+        if self.distribution == 'gaussian':
             std = torch.exp(0.5 * log_var)
             eps = torch.randn_like(std)
-            return mean + eps * std  # Normal distribution reparameterization
+            return mean + eps * std  # gaussian distribution reparameterization
         elif self.distribution == 'uniform':
             # Uniform distribution: Draw from a range between -sqrt(3)*std and sqrt(3)*std
             std = torch.exp(0.5 * log_var)
