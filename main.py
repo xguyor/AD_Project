@@ -9,11 +9,45 @@ from sklearn.manifold import TSNE
 import torch.nn.functional as F
 import numpy as np
 
-def interpolate_latent_vectors(latent1, latent2, num_interpolations=5):
-    """Linearly interpolate between two latent vectors."""
+
+def slerp(val, low, high):
+    """Spherical interpolation between low and high"""
+    low = low.squeeze(0)  # Remove batch dimension if necessary
+    high = high.squeeze(0)  # Remove batch dimension if necessary
+    omega = torch.acos(torch.dot(low / torch.norm(low), high / torch.norm(high)))
+    sin_omega = torch.sin(omega)
+    return (torch.sin((1.0 - val) * omega) / sin_omega) * low + (torch.sin(val * omega) / sin_omega) * high
+
+
+def interpolate_latent_vectors_slerp(latent1, latent2, num_interpolations=5):
+    """Perform SLERP (Spherical Linear Interpolation) between two latent vectors."""
     ratios = torch.linspace(0, 1, steps=num_interpolations + 2).to(latent1.device)  # Include 0 and 1
-    interpolations = [(1 - ratio) * latent1 + ratio * latent2 for ratio in ratios]
+    interpolations = [slerp(ratio, latent1, latent2) for ratio in ratios]
     return interpolations
+
+
+def interpolate_and_plot_slerp(model, sample1, sample2, device, save_file="interpolations_slerp.png"):
+    """Interpolate latent vectors between two samples using SLERP and plot the decoded images."""
+    model.eval()
+
+    # Extract latent vectors for both samples
+    latent1 = extract_latent_vectors_from_sample(model, sample1, device)
+    latent2 = extract_latent_vectors_from_sample(model, sample2, device)
+
+    # Perform SLERP interpolation (5 interpolations)
+    interpolations = interpolate_latent_vectors_slerp(latent1, latent2, num_interpolations=5)
+
+    # Decode original samples and interpolations
+    with torch.no_grad():
+        decoded_images = [model.decode(latent).view(28, 28).cpu().numpy() for latent in interpolations]
+
+        # Decode the original latent vectors (sample1 and sample2)
+        decoded_original1 = model.decode(latent1).view(28, 28).cpu().numpy()
+        decoded_original2 = model.decode(latent2).view(28, 28).cpu().numpy()
+
+    # Plot the results (original1, interpolations, original2)
+    plot_interpolations(decoded_original1, decoded_images, decoded_original2, save_file)
+
 
 def plot_interpolations(original1, interpolations, original2, save_file="interpolations.png"):
     """Plot original vectors and interpolated vectors."""
@@ -38,30 +72,6 @@ def plot_interpolations(original1, interpolations, original2, save_file="interpo
     plt.suptitle(f"Interpolation from Original 1 to Original 2 {save_file}")
     plt.savefig(save_file)
     plt.show()
-
-
-def interpolate_and_plot(model, sample1, sample2, device, save_file="interpolations.png"):
-    """Interpolate latent vectors between two samples and plot the decoded images."""
-    model.eval()
-
-    # Extract latent vectors for both samples
-    latent1 = extract_latent_vectors_from_sample(model, sample1, device)
-    latent2 = extract_latent_vectors_from_sample(model, sample2, device)
-
-    # Perform linear interpolation (5 interpolations)
-    interpolations = interpolate_latent_vectors(latent1, latent2, num_interpolations=5)
-
-    # Decode original samples and interpolations
-    with torch.no_grad():
-        decoded_images = [model.decode(latent).view(28, 28).cpu().numpy() for latent in interpolations]
-
-        # Decode the original latent vectors (sample1 and sample2)
-        decoded_original1 = model.decode(latent1).view(28, 28).cpu().numpy()
-        decoded_original2 = model.decode(latent2).view(28, 28).cpu().numpy()
-
-    # Plot the results (original1, interpolations, original2)
-    plot_interpolations(decoded_original1, decoded_images, decoded_original2, save_file)
-
 
 def extract_latent_vectors_from_sample(model, x, device):
     """Extract latent vectors for a given sample from the model."""
@@ -377,10 +387,8 @@ def main():
     sample1 = sample1.view(-1, 28 * 28).float()  # Now sample1 is [1, 784]
     sample2 = sample2.view(-1, 28 * 28).float()  # Now sample2 is [1, 784]
 
-    # Interpolate and plot for Uniform VAD
-    interpolate_and_plot(model_vad_gaussian, sample1, sample2, device, save_file="interpolations_gaussian.png")
-    interpolate_and_plot(model_vad_uniform, sample1, sample2, device, save_file="interpolations_uniform.png")
-
+    interpolate_and_plot_slerp(model_vad_gaussian, sample1, sample2, device, save_file="interpolations_gaussian_slerp.png")
+    interpolate_and_plot_slerp(model_vad_uniform, sample1, sample2, device, save_file="interpolations_uniform_slerp.png")
 
 if __name__ == "__main__":
     main()
