@@ -457,7 +457,6 @@ def main():
     gaussian_vad(model_vad_gaussian, optimizer_gaussian, train_dl, test_dl, latent_dim, device, num_epochs, learning_rate, latents_train, latents_test, train_labels)
     uniform_vad(model_vad_uniform, optimizer_uniform, train_dl, test_dl, latent_dim, device,num_epochs, learning_rate, latents_train, latents_test, train_labels)
 
-
     #6
     train_ds, train_dl, test_ds, test_dl, latents_train, latents_test = setup_data(batch_size, latent_dim, device)
 
