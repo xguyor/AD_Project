@@ -180,7 +180,7 @@ def sample_and_decode(model, latents, device, save_file, model_type="AD"):
     plt.show()
 
 # Function: visualize_latent_space_with_labels
-def visualize_latent_space_distribution(latents, device, n_samples=1000, save_file="latent_space_distribution.png"):
+def visualize_latent_space_distribution(latents, device, save_file, n_samples=1000):
     """Visualize latent space distribution using t-SNE and color based on vector norms."""
 
     # Ensure latents is a PyTorch tensor and convert it to the device
@@ -203,30 +203,12 @@ def visualize_latent_space_distribution(latents, device, n_samples=1000, save_fi
     plt.figure(figsize=(8, 6))
     scatter = plt.scatter(latent_tsne[:, 0], latent_tsne[:, 1], c=norms, cmap='viridis', s=5, alpha=0.7)
     plt.colorbar(scatter, label="Latent Vector Norms")
-    plt.title('t-SNE of Latent Space Distribution')
+    plt.title(f't-SNE of Latent Space Distribution {save_file}')
     plt.xlabel('t-SNE Component 1')
     plt.ylabel('t-SNE Component 2')
     plt.savefig(save_file)
     plt.show()
 
-
-# Function: evaluate_model_vad (already included, but making sure)
-def evaluate_model_vad(model, dataloader, optimizer, latents, num_epochs, device):
-    model.eval()
-    total_loss = 0
-    for i, (idx, x) in enumerate(dataloader):
-        idx = idx.to(device)
-        x = x.to(device).view(x.size(0), -1)  # Flatten the images
-
-        with torch.no_grad():
-            x_rec, mean, log_var = model(x)  # Forward pass in VAD
-            reconstruction_loss = F.mse_loss(x_rec, x, reduction='mean')
-            kl_divergence = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp()) / x.size(0)
-            loss = reconstruction_loss + 0.001 * kl_divergence  # Total VAD loss
-
-        total_loss += loss.item()
-
-    return total_loss / len(dataloader)
 
 # Function: setup_data
 def setup_data(batch_size, latent_dim, device):
@@ -264,7 +246,7 @@ def run_ad_pipeline(train_dl, test_dl, latents_train, latents_test, train_ds, de
 
     # Visualize latent space with labels
     train_labels = train_ds.y
-    visualize_latent_space_distribution(latents_train,  device)
+    visualize_latent_space_distribution(latents_train,  device,save_file="latent_space_distribution_ad.png")
 
 # Function: run_vad_pipeline
 def run_vad_pipeline(train_dl, test_dl, latents_train, latents_test, device, latent_dim, num_epochs, learning_rate, latent_optimization_epochs):
@@ -322,71 +304,119 @@ def run_vad_pipeline(train_dl, test_dl, latents_train, latents_test, device, lat
     sample_and_decode(model_vad, torch.cat(latents_test_mean), device, "latent_comparison_vad.png", model_type="VAD")
 
     # Visualize latent space with labels
-    visualize_latent_space_distribution(torch.cat(latents_train_mean), device)
+    visualize_latent_space_distribution(torch.cat(latents_train_mean), device, save_file="latent_space_distribution_vad.png")
 
 
-# def run_vad_pipeline(train_dl, test_dl, latents_train, latents_test, device, latent_dim, num_epochs, learning_rate, latent_optimization_epochs):
-#     """Run VariationalAutoDecoder training, evaluation, and visualization."""
-#     model_vad = VariationalAutoDecoder(latent_dim=latent_dim).to(device)
-#     optimizer_train_vad = optim.Adam(model_vad.parameters(), lr=learning_rate)
-#
-#     # Train the VariationalAutoDecoder
-#     print("Training Variational AutoDecoder (VAD)...")
-#     train_vad(model_vad, train_dl, optimizer_train_vad, num_epochs, device)
-#
-#     # Sample and decode latent vectors
-#     sample_and_decode(model_vad, latents_train, device, "latent_comparison_vad.png", model_type="VAD")
-#
-#     # Evaluate VAD model on training and test sets
-#     print("Evaluating VAD on training set...")
-#     train_loss_vad = evaluate_model_vad(model_vad, train_dl, optimizer_train_vad, latents_train, latent_optimization_epochs, device)
-#     print(f"Final VAD training set loss: {train_loss_vad}")
-#
-#     print("Evaluating VAD on test set...")
-#     test_loss_vad = evaluate_model_vad(model_vad, test_dl, optimizer_train_vad, latents_test, latent_optimization_epochs, device)
-#     print(f"Final VAD test set loss: {test_loss_vad}")
-
-def gaussian_vad(model_vad_gaussian,optimizer_gaussian,train_dl, test_dl, latent_dim, device,num_epochs, learning_rate, latents_train, latents_test, train_labels):
+def gaussian_vad(model_vad_gaussian, optimizer_gaussian, train_dl, test_dl, latent_dim, device, num_epochs,
+                 learning_rate, latents_train, latents_test, train_labels):
     ################### Gaussian VAD ########################
+
+    # Get the decoded latents for VAD (encoding and decoding real data, not latents)
+    with torch.no_grad():
+        latents_train_mean = []
+        for _, x in train_dl:
+            x = x.to(device).view(x.size(0), -1)  # Flatten the images to [batch_size, 784]
+            mean, _ = model_vad_gaussian.encode(x)
+            latents_train_mean.append(mean)
+        latents_train_mean = torch.cat(latents_train_mean)
+
+    with torch.no_grad():
+        latents_test_mean = []
+        for _, x in test_dl:
+            x = x.to(device).view(x.size(0), -1)  # Flatten the images to [batch_size, 784]
+            mean, _ = model_vad_gaussian.encode(x)
+            latents_test_mean.append(mean)
+        latents_test_mean = torch.cat(latents_test_mean)
+
     print("Evaluating VAD with Gaussian distribution on training set...")
-    train_loss_gaussian = evaluate_model_vad(model_vad_gaussian, train_dl, optimizer_gaussian, latents_train, num_epochs, device)
+    train_loss_gaussian = evaluate_model(
+        lambda latents: model_vad_gaussian.decode(latents),
+        [(i, x.view(x.size(0), -1).to(device)) for i, x in train_dl],  # Flatten x here
+        optimizer_gaussian,
+        latents_train_mean,
+        num_epochs,
+        device
+    )
     print(f"Final Gaussian VAD training set loss: {train_loss_gaussian}")
 
     print("Evaluating VAD with Gaussian distribution on test set...")
-    test_loss_gaussian = evaluate_model_vad(model_vad_gaussian, test_dl, optimizer_gaussian, latents_test, num_epochs, device)
+    test_loss_gaussian = evaluate_model(
+        lambda latents: model_vad_gaussian.decode(latents),
+        [(i, x.view(x.size(0), -1).to(device)) for i, x in test_dl],  # Flatten x here
+        optimizer_gaussian,
+        latents_test_mean,
+        num_epochs,
+        device
+    )
     print(f"Final Gaussian VAD test set loss: {test_loss_gaussian}")
 
     print("Sampling and decoding latent vectors for Gaussian VAD...")
-    sample_and_decode(model_vad_gaussian, latents_test, device, "latent_comparison_gaussian_vad.png", model_type="VAD")
+    sample_and_decode(model_vad_gaussian, latents_test_mean, device, "latent_comparison_gaussian_vad.png",
+                      model_type="VAD")
 
     # Visualize latent space with labels
     latents = extract_latent_vectors(model_vad_gaussian, train_dl, device)
-    visualize_latent_space_distribution(latents,  device, save_file="latent_space_gaussian.png")
+    visualize_latent_space_distribution(latents, device, save_file="latent_space_gaussian.png")
 
-def uniform_vad(model_vad_uniform,optimizer_uniform, train_dl, test_dl, latent_dim, device,num_epochs, learning_rate, latents_train, latents_test, train_labels):
+
+def uniform_vad(model_vad_uniform, optimizer_uniform, train_dl, test_dl, latent_dim, device, num_epochs, learning_rate,
+                latents_train, latents_test, train_labels):
     ################### Uniform VAD ########################
+
+    # Get the decoded latents for VAD (encoding and decoding real data, not latents)
+    with torch.no_grad():
+        latents_train_mean = []
+        for _, x in train_dl:
+            x = x.to(device).view(x.size(0), -1)  # Flatten the images to [batch_size, 784]
+            mean, _ = model_vad_uniform.encode(x)
+            latents_train_mean.append(mean)
+        latents_train_mean = torch.cat(latents_train_mean)
+
+    with torch.no_grad():
+        latents_test_mean = []
+        for _, x in test_dl:
+            x = x.to(device).view(x.size(0), -1)  # Flatten the images to [batch_size, 784]
+            mean, _ = model_vad_uniform.encode(x)
+            latents_test_mean.append(mean)
+        latents_test_mean = torch.cat(latents_test_mean)
+
     print("Evaluating VAD with Uniform distribution on training set...")
-    train_loss_uniform = evaluate_model_vad(model_vad_uniform, train_dl, optimizer_uniform, latents_train, num_epochs,
-                                            device)
+    train_loss_uniform = evaluate_model(
+        lambda latents: model_vad_uniform.decode(latents),
+        [(i, x.view(x.size(0), -1).to(device)) for i, x in train_dl],  # Flatten x here
+        optimizer_uniform,
+        latents_train_mean,
+        num_epochs,
+        device
+    )
     print(f"Final Uniform VAD training set loss: {train_loss_uniform}")
 
     print("Evaluating VAD with Uniform distribution on test set...")
-    test_loss_uniform = evaluate_model_vad(model_vad_uniform, test_dl, optimizer_uniform, latents_test, num_epochs,
-                                           device)
+    test_loss_uniform = evaluate_model(
+        lambda latents: model_vad_uniform.decode(latents),
+        [(i, x.view(x.size(0), -1).to(device)) for i, x in test_dl],  # Flatten x here
+        optimizer_uniform,
+        latents_test_mean,
+        num_epochs,
+        device
+    )
     print(f"Final Uniform VAD test set loss: {test_loss_uniform}")
 
     print("Sampling and decoding latent vectors for Uniform VAD...")
-    sample_and_decode(model_vad_uniform, latents_test, device, "latent_comparison_uniform_vad.png", model_type="VAD")
+    sample_and_decode(model_vad_uniform, latents_test_mean, device, "latent_comparison_uniform_vad.png",
+                      model_type="VAD")
 
     # Visualize latent space with labels
     latents = extract_latent_vectors(model_vad_uniform, train_dl, device)
-    visualize_latent_space_distribution(latents,  device, save_file="latent_space_uniform.png")
+    visualize_latent_space_distribution(latents, device, save_file="latent_space_uniform.png")
+
+
 # Function: main
 def main():
     """Main function to execute both AD and VAD pipelines."""
     # Hyperparameters
     latent_dim = 64
-    num_epochs = 20
+    num_epochs = 100
     latent_optimization_epochs = 20  # Number of epochs for optimizing train and test latents
     learning_rate = 0.001
     batch_size = 32
