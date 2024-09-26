@@ -268,7 +268,7 @@ def run_ad_pipeline(train_dl, test_dl, latents_train, latents_test, train_ds, de
 
 # Function: run_vad_pipeline
 def run_vad_pipeline(train_dl, test_dl, latents_train, latents_test, device, latent_dim, num_epochs, learning_rate, latent_optimization_epochs):
-    """Run VariationalAutoDecoder training, evaluation, and visualization."""
+    """Run VariationalAutoDecoder pipeline."""
     model_vad = VariationalAutoDecoder(latent_dim=latent_dim).to(device)
     optimizer_train_vad = optim.Adam(model_vad.parameters(), lr=learning_rate)
 
@@ -276,17 +276,75 @@ def run_vad_pipeline(train_dl, test_dl, latents_train, latents_test, device, lat
     print("Training Variational AutoDecoder (VAD)...")
     train_vad(model_vad, train_dl, optimizer_train_vad, num_epochs, device)
 
-    # Sample and decode latent vectors
-    sample_and_decode(model_vad, latents_train, device, "latent_comparison_vad.png", model_type="VAD")
+    # Get the decoded latents for VAD (encoding and decoding real data, not latents)
+    with torch.no_grad():
+        latents_train_mean, latents_train_log_var = [], []
+        for _, x in train_dl:
+            x = x.to(device).view(x.size(0), -1)  # Flatten the images to [batch_size, 784]
+            mean, log_var = model_vad.encode(x)
+            latents_train_mean.append(mean)
+            latents_train_log_var.append(log_var)
+        train_latents_decoded = model_vad.decode(torch.cat(latents_train_mean))
 
-    # Evaluate VAD model on training and test sets
+    with torch.no_grad():
+        latents_test_mean, latents_test_log_var = [], []
+        for _, x in test_dl:
+            x = x.to(device).view(x.size(0), -1)  # Flatten the images to [batch_size, 784]
+            mean, log_var = model_vad.encode(x)
+            latents_test_mean.append(mean)
+            latents_test_log_var.append(log_var)
+        test_latents_decoded = model_vad.decode(torch.cat(latents_test_mean))
+
+    # Flatten x in the dataloader inside evaluate_model
     print("Evaluating VAD on training set...")
-    train_loss_vad = evaluate_model_vad(model_vad, train_dl, optimizer_train_vad, latents_train, latent_optimization_epochs, device)
+    train_loss_vad = evaluate_model(
+        lambda latents: model_vad.decode(latents),  # Ensure `evaluate_model` only gets `x_rec`
+        [(i, x.view(x.size(0), -1).to(device)) for i, x in train_dl],  # Flatten x here
+        optimizer_train_vad,
+        torch.cat(latents_train_mean),
+        latent_optimization_epochs,
+        device
+    )
     print(f"Final VAD training set loss: {train_loss_vad}")
 
     print("Evaluating VAD on test set...")
-    test_loss_vad = evaluate_model_vad(model_vad, test_dl, optimizer_train_vad, latents_test, latent_optimization_epochs, device)
+    test_loss_vad = evaluate_model(
+        lambda latents: model_vad.decode(latents),  # Ensure `evaluate_model` only gets `x_rec`
+        [(i, x.view(x.size(0), -1).to(device)) for i, x in test_dl],  # Flatten x here
+        optimizer_train_vad,
+        torch.cat(latents_test_mean),
+        latent_optimization_epochs,
+        device
+    )
     print(f"Final VAD test set loss: {test_loss_vad}")
+
+    # Sample and decode latent vectors for visualization
+    sample_and_decode(model_vad, torch.cat(latents_test_mean), device, "latent_comparison_vad.png", model_type="VAD")
+
+    # Visualize latent space with labels
+    visualize_latent_space_distribution(torch.cat(latents_train_mean), device)
+
+
+# def run_vad_pipeline(train_dl, test_dl, latents_train, latents_test, device, latent_dim, num_epochs, learning_rate, latent_optimization_epochs):
+#     """Run VariationalAutoDecoder training, evaluation, and visualization."""
+#     model_vad = VariationalAutoDecoder(latent_dim=latent_dim).to(device)
+#     optimizer_train_vad = optim.Adam(model_vad.parameters(), lr=learning_rate)
+#
+#     # Train the VariationalAutoDecoder
+#     print("Training Variational AutoDecoder (VAD)...")
+#     train_vad(model_vad, train_dl, optimizer_train_vad, num_epochs, device)
+#
+#     # Sample and decode latent vectors
+#     sample_and_decode(model_vad, latents_train, device, "latent_comparison_vad.png", model_type="VAD")
+#
+#     # Evaluate VAD model on training and test sets
+#     print("Evaluating VAD on training set...")
+#     train_loss_vad = evaluate_model_vad(model_vad, train_dl, optimizer_train_vad, latents_train, latent_optimization_epochs, device)
+#     print(f"Final VAD training set loss: {train_loss_vad}")
+#
+#     print("Evaluating VAD on test set...")
+#     test_loss_vad = evaluate_model_vad(model_vad, test_dl, optimizer_train_vad, latents_test, latent_optimization_epochs, device)
+#     print(f"Final VAD test set loss: {test_loss_vad}")
 
 def gaussian_vad(model_vad_gaussian,optimizer_gaussian,train_dl, test_dl, latent_dim, device,num_epochs, learning_rate, latents_train, latents_test, train_labels):
     ################### Gaussian VAD ########################
@@ -328,7 +386,7 @@ def main():
     """Main function to execute both AD and VAD pipelines."""
     # Hyperparameters
     latent_dim = 64
-    num_epochs = 140
+    num_epochs = 20
     latent_optimization_epochs = 20  # Number of epochs for optimizing train and test latents
     learning_rate = 0.001
     batch_size = 32
@@ -342,12 +400,12 @@ def main():
 
     #1.3.1
     # Run AutoDecoder (AD) pipeline
-    # run_ad_pipeline(train_dl, test_dl, latents_train, latents_test, train_ds, device, latent_dim, num_epochs, learning_rate, latent_optimization_epochs)
+    run_ad_pipeline(train_dl, test_dl, latents_train, latents_test, train_ds, device, latent_dim, num_epochs, learning_rate, latent_optimization_epochs)
 
     #1.3.2
     #1-3
     # Run VariationalAutoDecoder (VAD) pipeline
-    # run_vad_pipeline(train_dl, test_dl, latents_train, latents_test, device, latent_dim, num_epochs, learning_rate, latent_optimization_epochs)
+    run_vad_pipeline(train_dl, test_dl, latents_train, latents_test, device, latent_dim, num_epochs, learning_rate, latent_optimization_epochs)
 
 
     #4
@@ -357,7 +415,7 @@ def main():
     optimizer_gaussian = optim.Adam(model_vad_gaussian.parameters(), lr=learning_rate)
     print("Training VAD with Gaussian distribution...")
     train_vad(model_vad_gaussian, train_dl, optimizer_gaussian, num_epochs, device)
-
+    #
     # Uniform distribution VAD
     train_ds, train_dl, test_ds, test_dl, latents_train, latents_test = setup_data(batch_size, latent_dim, device)
     model_vad_uniform = VariationalAutoDecoder(latent_dim=64, distribution='uniform').to(device)
@@ -366,8 +424,8 @@ def main():
     train_vad(model_vad_uniform, train_dl, optimizer_uniform, num_epochs, device)
 
     #5
-    # gaussian_vad(model_vad_gaussian, optimizer_gaussian, train_dl, test_dl, latent_dim, device, num_epochs, learning_rate, latents_train, latents_test, train_labels)
-    # uniform_vad(model_vad_uniform, optimizer_uniform, train_dl, test_dl, latent_dim, device,num_epochs, learning_rate, latents_train, latents_test, train_labels)
+    gaussian_vad(model_vad_gaussian, optimizer_gaussian, train_dl, test_dl, latent_dim, device, num_epochs, learning_rate, latents_train, latents_test, train_labels)
+    uniform_vad(model_vad_uniform, optimizer_uniform, train_dl, test_dl, latent_dim, device,num_epochs, learning_rate, latents_train, latents_test, train_labels)
 
 
     #6
