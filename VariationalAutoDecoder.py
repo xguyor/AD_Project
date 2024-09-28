@@ -7,14 +7,14 @@ class VariationalAutoDecoder(nn.Module):
     def __init__(self, latent_dim=64, input_dim=784, distribution='gaussian'):
         super(VariationalAutoDecoder, self).__init__()
         self.latent_dim = latent_dim
-        self.input_dim = input_dim  # Make sure to store input_dim as a class attribute
-        self.distribution = distribution  # Set the default distribution
+        self.input_dim = input_dim
+        self.distribution = distribution
 
         # Encoder layers
         self.fc1 = nn.Linear(input_dim, 512)
         self.fc2 = nn.Linear(512, 256)
-        self.fc_mean = nn.Linear(256, latent_dim)  # Outputs mean of the latent space
-        self.fc_log_var = nn.Linear(256, latent_dim)  # Outputs log variance of the latent space
+        self.fc_mean = nn.Linear(256, latent_dim)
+        self.fc_log_var = nn.Linear(256, latent_dim)
 
         # Decoder layers
         self.fc3 = nn.Linear(latent_dim, 256)
@@ -32,14 +32,13 @@ class VariationalAutoDecoder(nn.Module):
         if self.distribution == 'gaussian':
             std = torch.exp(0.5 * log_var)
             eps = torch.randn_like(std)
-            return mean + eps * std  # Gaussian distribution reparameterization
+            return mean + eps * std
         elif self.distribution == 'uniform':
-            # Uniform distribution: Draw from a range between -sqrt(3)*std and sqrt(3)*std
             std = torch.exp(0.5 * log_var)
             eps = (torch.rand_like(std) * 2 - 1) * (std * (3 ** 0.5))
             return mean + eps
         else:
-            # If no distribution is selected, return mean as latent space
+            # If no distribution is selected (AD) , return mean as latent space
             return mean
 
     def decode(self, z):

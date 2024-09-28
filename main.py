@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from AutoDecoder import AutoDecoder
 from VariationalAutoDecoder import VariationalAutoDecoder
 from utils import create_dataloaders
+from utils import plot_tsne
 from evaluate import evaluate_model
 from sklearn.manifold import TSNE
 import torch.nn.functional as F
@@ -219,7 +220,7 @@ def setup_data(batch_size, latent_dim, device):
     return train_ds, train_dl, test_ds, test_dl, latents_train, latents_test
 
 # Function: run_ad_pipeline
-def run_ad_pipeline(train_dl, test_dl, latents_train, latents_test, train_ds, device, latent_dim, num_epochs, learning_rate, latent_optimization_epochs):
+def run_ad_pipeline(train_dl, test_dl, latents_train, test_ds, latents_test, train_ds, device, latent_dim, num_epochs, learning_rate, latent_optimization_epochs):
     """Run AutoDecoder training, evaluation, and visualization."""
     model = AutoDecoder(latent_dim=latent_dim).to(device)
     optimizer_train = optim.Adam(list(model.parameters()) + [latents_train], lr=learning_rate)
@@ -245,11 +246,10 @@ def run_ad_pipeline(train_dl, test_dl, latents_train, latents_test, train_ds, de
     sample_and_decode(model, latents_test, device, "latent_comparison_ad.png", model_type="AD")
 
     # Visualize latent space with labels
-    train_labels = train_ds.y
-    visualize_latent_space_distribution(latents_train,  device,save_file="latent_space_distribution_ad.png")
+    plot_tsne(test_ds, latents_test, "latent_space_distribution_ad.png", plot_title="t-SNE Plot")
 
 # Function: run_vad_pipeline
-def run_vad_pipeline(train_dl, test_dl, latents_train, latents_test, device, latent_dim, num_epochs, learning_rate, latent_optimization_epochs):
+def run_vad_pipeline(train_dl, test_dl,test_ds, latents_train, latents_test, device, latent_dim, num_epochs, learning_rate, latent_optimization_epochs):
     """Run VariationalAutoDecoder pipeline."""
     model_vad = VariationalAutoDecoder(latent_dim=latent_dim).to(device)
     optimizer_train_vad = optim.Adam(model_vad.parameters(), lr=learning_rate)
@@ -258,7 +258,7 @@ def run_vad_pipeline(train_dl, test_dl, latents_train, latents_test, device, lat
     print("Training Variational AutoDecoder (VAD)...")
     train_vad(model_vad, train_dl, optimizer_train_vad, num_epochs, device)
 
-    # Get the decoded latents for VAD (encoding and decoding real data, not latents)
+    # Get the decoded latents
     with torch.no_grad():
         latents_train_mean, latents_train_log_var = [], []
         for _, x in train_dl:
@@ -304,11 +304,9 @@ def run_vad_pipeline(train_dl, test_dl, latents_train, latents_test, device, lat
     sample_and_decode(model_vad, torch.cat(latents_test_mean), device, "latent_comparison_vad.png", model_type="VAD")
 
     # Visualize latent space with labels
-    visualize_latent_space_distribution(torch.cat(latents_train_mean), device, save_file="latent_space_distribution_vad.png")
+    plot_tsne(test_ds, torch.cat(latents_test_mean), "latent_space_distribution_vad.png", plot_title="t-SNE Plot")
 
-
-def gaussian_vad(model_vad_gaussian, optimizer_gaussian, train_dl, test_dl, latent_dim, device, num_epochs,
-                 learning_rate, latents_train, latents_test, train_labels):
+def gaussian_vad(model_vad_gaussian, optimizer_gaussian, train_dl, test_dl, test_ds, device, num_epochs):
     ################### Gaussian VAD ########################
 
     # Get the decoded latents for VAD (encoding and decoding real data, not latents)
@@ -355,12 +353,10 @@ def gaussian_vad(model_vad_gaussian, optimizer_gaussian, train_dl, test_dl, late
                       model_type="VAD")
 
     # Visualize latent space with labels
-    latents = extract_latent_vectors(model_vad_gaussian, train_dl, device)
-    visualize_latent_space_distribution(latents, device, save_file="latent_space_gaussian.png")
+    latents = extract_latent_vectors(model_vad_gaussian, test_dl, device)
+    plot_tsne(test_ds, latents_test_mean.to(device), "latent_space_gaussian.png", plot_title="t-SNE Plot")
 
-
-def uniform_vad(model_vad_uniform, optimizer_uniform, train_dl, test_dl, latent_dim, device, num_epochs, learning_rate,
-                latents_train, latents_test, train_labels):
+def uniform_vad(model_vad_uniform, optimizer_uniform, train_dl, test_dl, test_ds,device, num_epochs):
     ################### Uniform VAD ########################
 
     # Get the decoded latents for VAD (encoding and decoding real data, not latents)
@@ -407,16 +403,15 @@ def uniform_vad(model_vad_uniform, optimizer_uniform, train_dl, test_dl, latent_
                       model_type="VAD")
 
     # Visualize latent space with labels
-    latents = extract_latent_vectors(model_vad_uniform, train_dl, device)
-    visualize_latent_space_distribution(latents, device, save_file="latent_space_uniform.png")
-
+    latents = extract_latent_vectors(model_vad_uniform, test_dl, device)
+    plot_tsne(test_ds, latents_test_mean.to(device), "latent_space_uniform.png", plot_title="t-SNE Plot")
 
 # Function: main
 def main():
     """Main function to execute both AD and VAD pipelines."""
     # Hyperparameters
     latent_dim = 64
-    num_epochs = 100
+    num_epochs = 400
     latent_optimization_epochs = 20  # Number of epochs for optimizing train and test latents
     learning_rate = 0.001
     batch_size = 32
@@ -428,24 +423,27 @@ def main():
     train_ds, train_dl, test_ds, test_dl, latents_train, latents_test = setup_data(batch_size, latent_dim, device)
     train_labels = train_ds.y
 
-    #1.3.1
-    # Run AutoDecoder (AD) pipeline
-    run_ad_pipeline(train_dl, test_dl, latents_train, latents_test, train_ds, device, latent_dim, num_epochs, learning_rate, latent_optimization_epochs)
-
-    #1.3.2
-    #1-3
-    # Run VariationalAutoDecoder (VAD) pipeline
-    run_vad_pipeline(train_dl, test_dl, latents_train, latents_test, device, latent_dim, num_epochs, learning_rate, latent_optimization_epochs)
+    # #1.3.1
+    # # Run AutoDecoder (AD) pipeline
+    # run_ad_pipeline(train_dl, test_dl, latents_train, test_ds,latents_test, train_ds, device, latent_dim, num_epochs, learning_rate, latent_optimization_epochs)
+    #
+    # #1.3.2
+    # #1-3
+    # # Run VariationalAutoDecoder (VAD) pipeline
+    # run_vad_pipeline(train_dl, test_dl,test_ds, latents_train, latents_test, device, latent_dim, num_epochs, learning_rate, latent_optimization_epochs)
 
 
     #4
+    num_epochs = 200
+    batch_size = 32
+    learning_rate = 0.001
     # gaussian distribution VAD
     train_ds, train_dl, test_ds, test_dl, latents_train, latents_test = setup_data(batch_size, latent_dim, device)
     model_vad_gaussian = VariationalAutoDecoder(latent_dim=64, distribution='gaussian').to(device)
     optimizer_gaussian = optim.Adam(model_vad_gaussian.parameters(), lr=learning_rate)
     print("Training VAD with Gaussian distribution...")
     train_vad(model_vad_gaussian, train_dl, optimizer_gaussian, num_epochs, device)
-    #
+
     # Uniform distribution VAD
     train_ds, train_dl, test_ds, test_dl, latents_train, latents_test = setup_data(batch_size, latent_dim, device)
     model_vad_uniform = VariationalAutoDecoder(latent_dim=64, distribution='uniform').to(device)
@@ -453,29 +451,29 @@ def main():
     print("Training VAD with Uniform distribution...")
     train_vad(model_vad_uniform, train_dl, optimizer_uniform, num_epochs, device)
 
-    #5
-    gaussian_vad(model_vad_gaussian, optimizer_gaussian, train_dl, test_dl, latent_dim, device, num_epochs, learning_rate, latents_train, latents_test, train_labels)
-    uniform_vad(model_vad_uniform, optimizer_uniform, train_dl, test_dl, latent_dim, device,num_epochs, learning_rate, latents_train, latents_test, train_labels)
+    # #5
+    gaussian_vad(model_vad_gaussian, optimizer_gaussian, train_dl, test_dl, test_ds, device, num_epochs)
+    uniform_vad(model_vad_uniform, optimizer_uniform, train_dl, test_dl, test_ds, device,num_epochs)
 
-    #6
-    train_ds, train_dl, test_ds, test_dl, latents_train, latents_test = setup_data(batch_size, latent_dim, device)
-
-    # Pick two samples from the test set (images and labels are swapped in your case)
-    label_batch, data_batch = next(iter(test_dl))  # Corrected: data_batch should contain the images
-
-    # Print the shapes of data_batch and label_batch to verify
-    print(f"data_batch shape: {data_batch.shape}")  # Expected to be [batch_size, 28, 28] now
-    print(f"label_batch shape: {label_batch.shape}")  # This should contain the labels, likely [batch_size]
-
-    # Select the first two samples (ensure they're images, not scalars)
-    sample1, sample2 = data_batch[0].unsqueeze(0), data_batch[1].unsqueeze(0)  # Pick two images
-
-    # Flatten the images to [1, 784] for processing
-    sample1 = sample1.view(-1, 28 * 28).float()  # Now sample1 is [1, 784]
-    sample2 = sample2.view(-1, 28 * 28).float()  # Now sample2 is [1, 784]
-
-    interpolate_and_plot_slerp(model_vad_gaussian, sample1, sample2, device, save_file="interpolations_gaussian_slerp.png")
-    interpolate_and_plot_slerp(model_vad_uniform, sample1, sample2, device, save_file="interpolations_uniform_slerp.png")
+    # #6
+    # train_ds, train_dl, test_ds, test_dl, latents_train, latents_test = setup_data(batch_size, latent_dim, device)
+    #
+    # # Pick two samples from the test set (images and labels are swapped in your case)
+    # label_batch, data_batch = next(iter(test_dl))  # Corrected: data_batch should contain the images
+    #
+    # # Print the shapes of data_batch and label_batch to verify
+    # print(f"data_batch shape: {data_batch.shape}")  # Expected to be [batch_size, 28, 28] now
+    # print(f"label_batch shape: {label_batch.shape}")  # This should contain the labels, likely [batch_size]
+    #
+    # # Select the first two samples (ensure they're images, not scalars)
+    # sample1, sample2 = data_batch[0].unsqueeze(0), data_batch[1].unsqueeze(0)  # Pick two images
+    #
+    # # Flatten the images to [1, 784] for processing
+    # sample1 = sample1.view(-1, 28 * 28).float()
+    # sample2 = sample2.view(-1, 28 * 28).float()
+    #
+    # interpolate_and_plot_slerp(model_vad_gaussian, sample1, sample2, device, save_file="interpolations_gaussian_slerp.png")
+    # interpolate_and_plot_slerp(model_vad_uniform, sample1, sample2, device, save_file="interpolations_uniform_slerp.png")
 
 if __name__ == "__main__":
     main()
