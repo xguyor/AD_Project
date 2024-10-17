@@ -77,7 +77,7 @@ def plot_interpolations(original1, interpolations, original2, save_file="interpo
 def extract_latent_vectors_from_sample(model, x, device):
     """Extract latent vectors for a given sample from the model."""
     x = x.to(device).view(-1, 28*28).float()  # Flatten the image to 784 dimensions (28x28)
-    mean, log_var = model.encode(x)  # Forward pass through encoder
+    _, mean, log_var = model(x)  # Forward pass
     z = model.reparameterize(mean, log_var)  # Reparameterization trick
     return z
 
@@ -89,7 +89,7 @@ def extract_latent_vectors(model, dataloader, device):
     with torch.no_grad():
         for i, (idx, x) in enumerate(dataloader):
             x = x.to(device).view(x.size(0), -1)  # Flatten the images
-            mean, log_var = model.encode(x)
+            _, mean, log_var = model(x)
             z = model.reparameterize(mean, log_var)  # Latent vectors after reparameterization
             latents.append(z.cpu().numpy())  # Collect latent vectors
 
@@ -263,7 +263,7 @@ def run_vad_pipeline(train_dl, test_dl,test_ds, latents_train, latents_test, dev
         latents_train_mean, latents_train_log_var = [], []
         for _, x in train_dl:
             x = x.to(device).view(x.size(0), -1)  # Flatten the images to [batch_size, 784]
-            mean, log_var = model_vad.encode(x)
+            _, mean, log_var = model_vad(x)
             latents_train_mean.append(mean)
             latents_train_log_var.append(log_var)
         train_latents_decoded = model_vad.decode(torch.cat(latents_train_mean))
@@ -272,7 +272,7 @@ def run_vad_pipeline(train_dl, test_dl,test_ds, latents_train, latents_test, dev
         latents_test_mean, latents_test_log_var = [], []
         for _, x in test_dl:
             x = x.to(device).view(x.size(0), -1)  # Flatten the images to [batch_size, 784]
-            mean, log_var = model_vad.encode(x)
+            _, mean, log_var = model_vad(x)
             latents_test_mean.append(mean)
             latents_test_log_var.append(log_var)
         test_latents_decoded = model_vad.decode(torch.cat(latents_test_mean))
@@ -314,7 +314,7 @@ def gaussian_vad(model_vad_gaussian, optimizer_gaussian, train_dl, test_dl, test
         latents_train_mean = []
         for _, x in train_dl:
             x = x.to(device).view(x.size(0), -1)  # Flatten the images to [batch_size, 784]
-            mean, _ = model_vad_gaussian.encode(x)
+            _, mean, _ = model_vad_gaussian(x)
             latents_train_mean.append(mean)
         latents_train_mean = torch.cat(latents_train_mean)
 
@@ -322,7 +322,7 @@ def gaussian_vad(model_vad_gaussian, optimizer_gaussian, train_dl, test_dl, test
         latents_test_mean = []
         for _, x in test_dl:
             x = x.to(device).view(x.size(0), -1)  # Flatten the images to [batch_size, 784]
-            mean, _ = model_vad_gaussian.encode(x)
+            _, mean, _ = model_vad_gaussian(x)
             latents_test_mean.append(mean)
         latents_test_mean = torch.cat(latents_test_mean)
 
@@ -364,7 +364,7 @@ def uniform_vad(model_vad_uniform, optimizer_uniform, train_dl, test_dl, test_ds
         latents_train_mean = []
         for _, x in train_dl:
             x = x.to(device).view(x.size(0), -1)  # Flatten the images to [batch_size, 784]
-            mean, _ = model_vad_uniform.encode(x)
+            _, mean, _ = model_vad_uniform(x)
             latents_train_mean.append(mean)
         latents_train_mean = torch.cat(latents_train_mean)
 
@@ -372,7 +372,7 @@ def uniform_vad(model_vad_uniform, optimizer_uniform, train_dl, test_dl, test_ds
         latents_test_mean = []
         for _, x in test_dl:
             x = x.to(device).view(x.size(0), -1)  # Flatten the images to [batch_size, 784]
-            mean, _ = model_vad_uniform.encode(x)
+            _, mean, _ = model_vad_uniform(x)
             latents_test_mean.append(mean)
         latents_test_mean = torch.cat(latents_test_mean)
 

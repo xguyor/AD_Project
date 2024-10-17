@@ -21,13 +21,6 @@ class VariationalAutoDecoder(nn.Module):
         self.fc4 = nn.Linear(256, 512)
         self.fc5 = nn.Linear(512, input_dim)  # Outputs reconstructed image (784 = 28x28)
 
-    def encode(self, x):
-        h = F.relu(self.fc1(x))
-        h = F.relu(self.fc2(h))
-        mean = self.fc_mean(h)
-        log_var = self.fc_log_var(h)
-        return mean, log_var
-
     def reparameterize(self, mean, log_var):
         if self.distribution == 'gaussian':
             std = torch.exp(0.5 * log_var)
@@ -47,8 +40,16 @@ class VariationalAutoDecoder(nn.Module):
         return torch.sigmoid(self.fc5(h))  # Ensure output is between 0 and 1 for pixel values
 
     def forward(self, x):
-        mean, log_var = self.encode(x)
+        # Encoding process
+        h = F.relu(self.fc1(x))
+        h = F.relu(self.fc2(h))
+        mean = self.fc_mean(h)
+        log_var = self.fc_log_var(h)
+
+        # Reparameterization
         z = self.reparameterize(mean, log_var)
+
+        # Decoding process
         x_rec = self.decode(z)
 
         # Ensure that the reconstructed output is reshaped to match the input
